@@ -30,6 +30,7 @@
   <label><input type="checkbox" id="c_edges" checked> Bordes (tabs/slots)</label>
   <div style="margin-top:6px">Color caja (soldermask JLC):</div>
   <div id="sm"></div>
+  <div style="margin-top:6px">Acabado cobre: <button id="cu_gold">Oro</button> <button id="cu_silver">Plata</button></div>
 </div>
 <div id="views">
   <h3>Vista</h3>
@@ -68,9 +69,10 @@ const controls=new OrbitControls(camera,renderer.domElement);
 controls.target.set(CX,2,CZ);
 controls.update();
 
-scene.add(new THREE.AmbientLight(0xffffff,0.6));
+renderer.toneMapping=THREE.ACESFilmicToneMapping; renderer.toneMappingExposure=1.0;
+scene.add(new THREE.AmbientLight(0xffffff,0.32));
 const add=(x,y,z,i)=>{const d=new THREE.DirectionalLight(0xffffff,i);d.position.set(x,y,z);scene.add(d);};
-add(-120,220,-80,2.4); add(150,140,120,1.2); add(0,-140,40,0.7);
+add(-120,220,-80,1.5); add(150,140,120,0.8); add(0,-140,40,0.4);
 
 const G={pcb:new THREE.Group(),comps:new THREE.Group(),panel:new THREE.Group(),case:new THREE.Group()};
 Object.values(G).forEach(g=>scene.add(g));
@@ -86,13 +88,16 @@ function load(file,group,scale,onMesh){
 }
 // PCB y componentes: GLB en metros -> x1000 a mm.  Caja: GLB ya en mm -> x1.
 load('pcb.glb',G.pcb,1000);
-load('comps.glb',G.comps,1000);
+// componentes: kicad-cli los exporta gris claro -> oscurecer (botones/IC/potes negros, look solido)
+load('comps.glb',G.comps,1000,o=>{if(o.material){o.material=o.material.clone();o.material.color.setRGB(0.11,0.11,0.12);o.material.roughness=0.55;o.material.metalness=0.2;}});
 // Panel frontal real (FR4 con graficos). Su GLB esta en coords del proyecto panel ->
 // offset para alinear al board por M3, + altura del standoff. F mira hacia afuera (+alto).
-const panelSmMats=[];   // materiales soldermask del panel (verde) -> cambian con el color JLC
+const panelSmMats=[], panelCuMats=[];   // soldermask (verde) y cobre (gold) del panel
 load('panel.glb',G.panel,1000,o=>{
   const c=o.material&&o.material.color;
-  if(c && c.g>c.r && c.g>=c.b){ o.material=o.material.clone(); panelSmMats.push(o.material); }
+  if(!c) return;
+  if(c.g>c.r && c.g>=c.b){ o.material=o.material.clone(); panelSmMats.push(o.material); }      // soldermask
+  else if(c.r>0.4 && c.b<0.3){ o.material=o.material.clone(); o.material.metalness=0.85; o.material.roughness=0.35; panelCuMats.push(o.material); } // cobre
 });
 G.panel.position.set(-7.06, 11.5, 34.19);
 
@@ -108,12 +113,14 @@ JLC.forEach(([name,hex])=>{
     panelSmMats.forEach(m=>{m.color.copy(c);m.needsUpdate=true;});};
   smDiv.appendChild(b);
 });
-const caseEdges=[];
+const caseEdges=[], caseFr4Mats=[];
 load('case.glb',G.case,1,o=>{
   o.material=o.material.clone();
   o.material.transparent=true; o.material.opacity=0.4; o.material.depthWrite=false;
   o.material.side=THREE.DoubleSide;
-  caseMats.push(o.material);
+  const c=o.material.color;
+  if(c.g>c.r && c.g>=c.b) caseMats.push(o.material);   // cara soldermask (recolorable con JLC)
+  else caseFr4Mats.push(o.material);                    // canto = FR4 (no cambia de color)
   // líneas de borde -> hacen visibles tabs/slots/cutouts aún en modo sólido
   const e=new THREE.LineSegments(new THREE.EdgesGeometry(o.geometry,25),
     new THREE.LineBasicMaterial({color:0x1a1a1a}));
@@ -125,9 +132,12 @@ const bind=(id,grp)=>{const el=document.getElementById(id);el.onchange=()=>grp.v
 bind('c_pcb',G.pcb); bind('c_comps',G.comps); bind('c_panel',G.panel); bind('c_case',G.case);
 document.getElementById('c_trans').onchange=e=>{
   const t=e.target.checked;
-  caseMats.forEach(m=>{m.transparent=t;m.opacity=t?0.4:1;m.depthWrite=!t;m.needsUpdate=true;});
+  [...caseMats,...caseFr4Mats].forEach(m=>{m.transparent=t;m.opacity=t?0.4:1;m.depthWrite=!t;m.needsUpdate=true;});
 };
 document.getElementById('c_edges').onchange=e=>{caseEdges.forEach(l=>l.visible=e.target.checked);};
+const GOLD=new THREE.Color('#d4a017'), SILVER=new THREE.Color('#cacace');
+document.getElementById('cu_gold').onclick=()=>panelCuMats.forEach(m=>{m.color.copy(GOLD);m.needsUpdate=true;});
+document.getElementById('cu_silver').onclick=()=>panelCuMats.forEach(m=>{m.color.copy(SILVER);m.needsUpdate=true;});
 
 // botones de vista (cámara a posiciones preset, mirando el centro de la placa)
 const R=230;  // distancia
