@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>eucliMiniV2 — visor caja 3D</title>
+<style>
+  html,body{margin:0;height:100%;overflow:hidden;background:#2b2d33;font-family:system-ui,sans-serif;color:#eee}
+  #ui{position:fixed;top:10px;left:10px;background:rgba(20,22,26,.82);padding:12px 14px;border-radius:8px;font-size:13px;z-index:10;line-height:1.9}
+  #ui h3{margin:0 0 6px;font-size:13px;color:#8fd}
+  #ui label{display:block;cursor:pointer;user-select:none}
+  #ui input{vertical-align:-2px;margin-right:6px}
+  #hint{position:fixed;bottom:8px;left:10px;font-size:11px;color:#9aa;z-index:10}
+  #err{position:fixed;top:10px;right:10px;color:#fa8;font-size:12px;max-width:42ch;z-index:10;text-align:right}
+  #views{position:fixed;top:10px;right:10px;background:rgba(20,22,26,.82);padding:10px 12px;border-radius:8px;z-index:10}
+  #views h3{margin:0 0 6px;font-size:13px;color:#8fd}
+  #views button{display:inline-block;margin:2px;padding:5px 9px;font-size:12px;background:#3a3d44;color:#eee;border:1px solid #555;border-radius:5px;cursor:pointer}
+  #views button:hover{background:#4a4e57}
+</style>
+</head>
+<body>
+<div id="ui">
+  <h3>Capas</h3>
+  <label><input type="checkbox" id="c_pcb" checked> PCB</label>
+  <label><input type="checkbox" id="c_comps" checked> Componentes</label>
+  <label><input type="checkbox" id="c_panel" checked> Panel frontal</label>
+  <label><input type="checkbox" id="c_case" checked> Caja (paredes+base)</label>
+  <hr style="border-color:#444">
+  <label><input type="checkbox" id="c_trans" checked> Caja translúcida</label>
+  <label><input type="checkbox" id="c_edges" checked> Bordes (tabs/slots)</label>
+  <div style="margin-top:6px">Color caja (soldermask JLC):</div>
+  <div id="sm"></div>
+</div>
+<div id="views">
+  <h3>Vista</h3>
+  <button data-v="iso">Iso</button><button data-v="top">Superior</button><button data-v="bottom">Inferior</button><br>
+  <button data-v="front">Frente</button><button data-v="back">Atrás</button><br>
+  <button data-v="left">Izquierda</button><button data-v="right">Derecha</button>
+</div>
+<div id="hint">arrastrar = rotar · rueda = zoom · click derecho = pan</div>
+<div id="err"></div>
+<script type="importmap">
+{"imports":{
+  "three":"https://unpkg.com/three@0.160.0/build/three.module.js",
+  "three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"
+}}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
+import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
+
+const errEl=document.getElementById('err');
+const showErr=m=>{errEl.textContent=String(m);console.error(m);};
+
+const scene=new THREE.Scene();
+scene.background=new THREE.Color(0x2b2d33);
+const renderer=new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(innerWidth,innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+document.body.appendChild(renderer.domElement);
+
+// centro de la placa (frame: X=worldX, Y=alto, Z=worldY)
+const CX=66.13, CZ=135.86;
+const camera=new THREE.PerspectiveCamera(45,innerWidth/innerHeight,1,8000);
+camera.position.set(CX-140,150,CZ-180);
+const controls=new OrbitControls(camera,renderer.domElement);
+controls.target.set(CX,2,CZ);
+controls.update();
+
+scene.add(new THREE.AmbientLight(0xffffff,0.6));
+const add=(x,y,z,i)=>{const d=new THREE.DirectionalLight(0xffffff,i);d.position.set(x,y,z);scene.add(d);};
+add(-120,220,-80,2.4); add(150,140,120,1.2); add(0,-140,40,0.7);
+
+const G={pcb:new THREE.Group(),comps:new THREE.Group(),panel:new THREE.Group(),case:new THREE.Group()};
+Object.values(G).forEach(g=>scene.add(g));
+
+const loader=new GLTFLoader();
+const caseMats=[];
+function load(file,group,scale,onMesh){
+  loader.load(file,g=>{
+    g.scene.scale.setScalar(scale);
+    if(onMesh) g.scene.traverse(o=>{if(o.isMesh)onMesh(o);});
+    group.add(g.scene);
+  },undefined,e=>showErr('No cargó '+file+' — abrí por servidor (http), no file://. '+e));
+}
+// PCB y componentes: GLB en metros -> x1000 a mm.  Caja: GLB ya en mm -> x1.
+load('pcb.glb',G.pcb,1000);
+load('comps.glb',G.comps,1000);
+// Panel frontal real (FR4 con graficos). Su GLB esta en coords del proyecto panel ->
+// offset para alinear al board por M3, + altura del standoff. F mira hacia afuera (+alto).
+const panelSmMats=[];   // materiales soldermask del panel (verde) -> cambian con el color JLC
+load('panel.glb',G.panel,1000,o=>{
+  const c=o.material&&o.material.color;
+  if(c && c.g>c.r && c.g>=c.b){ o.material=o.material.clone(); panelSmMats.push(o.material); }
+});
+G.panel.position.set(-7.06, 11.5, 34.19);
+
+// colores soldermask JLC -> color de la CAJA (se fabrica en FR4/PCB en JLC)
+const JLC=[['Verde','#157f3b'],['Rojo','#9e2018'],['Amarillo','#c7b200'],['Azul','#1f3d7a'],
+           ['Blanco','#dcdcdc'],['Negro','#141414'],['Morado','#4b1d6e']];
+const smDiv=document.getElementById('sm');
+JLC.forEach(([name,hex])=>{
+  const b=document.createElement('button');
+  b.title=name; b.style.cssText=`width:20px;height:20px;margin:2px;padding:0;border:1px solid #888;border-radius:4px;background:${hex};cursor:pointer`;
+  b.onclick=()=>{const c=new THREE.Color(hex);
+    caseMats.forEach(m=>{m.color.copy(c);m.needsUpdate=true;});
+    panelSmMats.forEach(m=>{m.color.copy(c);m.needsUpdate=true;});};
+  smDiv.appendChild(b);
+});
+const caseEdges=[];
+load('case.glb',G.case,1,o=>{
+  o.material=o.material.clone();
+  o.material.transparent=true; o.material.opacity=0.4; o.material.depthWrite=false;
+  o.material.side=THREE.DoubleSide;
+  caseMats.push(o.material);
+  // líneas de borde -> hacen visibles tabs/slots/cutouts aún en modo sólido
+  const e=new THREE.LineSegments(new THREE.EdgesGeometry(o.geometry,25),
+    new THREE.LineBasicMaterial({color:0x1a1a1a}));
+  o.add(e); caseEdges.push(e);
+});
+
+// checkboxes
+const bind=(id,grp)=>{const el=document.getElementById(id);el.onchange=()=>grp.visible=el.checked;};
+bind('c_pcb',G.pcb); bind('c_comps',G.comps); bind('c_panel',G.panel); bind('c_case',G.case);
+document.getElementById('c_trans').onchange=e=>{
+  const t=e.target.checked;
+  caseMats.forEach(m=>{m.transparent=t;m.opacity=t?0.4:1;m.depthWrite=!t;m.needsUpdate=true;});
+};
+document.getElementById('c_edges').onchange=e=>{caseEdges.forEach(l=>l.visible=e.target.checked);};
+
+// botones de vista (cámara a posiciones preset, mirando el centro de la placa)
+const R=230;  // distancia
+const VIEWS={
+  iso:   [CX-R*0.6, R*0.7, CZ-R*0.8],
+  top:   [CX,       R*1.3, CZ+0.01],
+  bottom:[CX,      -R*1.3, CZ+0.01],
+  front: [CX,       R*0.25,CZ-R],      // borde de conectores (worldY min)
+  back:  [CX,       R*0.25,CZ+R],
+  left:  [CX-R,     R*0.25,CZ],
+  right: [CX+R,     R*0.25,CZ],
+};
+document.querySelectorAll('#views button').forEach(b=>{
+  b.onclick=()=>{const p=VIEWS[b.dataset.v];camera.position.set(p[0],p[1],p[2]);controls.target.set(CX,2,CZ);controls.update();};
+});
+addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);});
+(function loop(){requestAnimationFrame(loop);controls.update();renderer.render(scene,camera);})();
+</script>
+</body>
+</html>
