@@ -26,7 +26,7 @@
   <label><input type="checkbox" id="c_panel" checked> Panel frontal</label>
   <label><input type="checkbox" id="c_case" checked> Caja (paredes+base)</label>
   <hr style="border-color:#444">
-  <label><input type="checkbox" id="c_trans" checked> Caja translúcida</label>
+  <label><input type="checkbox" id="c_trans"> Caja translúcida</label>
   <label><input type="checkbox" id="c_edges" checked> Bordes (tabs/slots)</label>
   <div style="margin-top:6px">Color caja (soldermask JLC):</div>
   <div id="sm"></div>
@@ -92,14 +92,16 @@ load('pcb.glb',G.pcb,1000);
 load('comps.glb',G.comps,1000,o=>{if(o.material){o.material=o.material.clone();o.material.color.setRGB(0.11,0.11,0.12);o.material.roughness=0.55;o.material.metalness=0.2;}});
 // Panel frontal real (FR4 con graficos). Su GLB esta en coords del proyecto panel ->
 // offset para alinear al board por M3, + altura del standoff. F mira hacia afuera (+alto).
-const panelSmMats=[], panelCuMats=[];   // soldermask (verde) y cobre (gold) del panel
+const GOLD=new THREE.Color('#d4a017'), SILVER=new THREE.Color('#cacace');
+const FR4=new THREE.Color(0.80,0.70,0.42);   // FR4 desnudo (igual que el canto de la caja)
+const panelSmMats=[], panelCuMats=[];
 load('panel.glb',G.panel,1000,o=>{
-  const c=o.material&&o.material.color;
-  if(!c) return;
-  if(c.g>c.r && c.g>=c.b){ o.material=o.material.clone();
-      o.material.color.setRGB(0.10,0.35,0.20); o.material.roughness=0.6; o.material.metalness=0.0; // igualar al soldermask de la caja
-      panelSmMats.push(o.material); }                                                              // soldermask
-  else if(c.r>0.4 && c.b<0.3){ o.material=o.material.clone(); o.material.metalness=0.85; o.material.roughness=0.35; panelCuMats.push(o.material); } // cobre
+  if(!o.material) return;
+  const m=o.material=o.material.clone(), c=m.color;
+  m.transparent=false; m.opacity=1; m.depthWrite=true;        // KiCad exporta semitransparente -> opaco
+  if(c.g>c.r && c.g>=c.b){ m.color.setRGB(0.10,0.35,0.20); m.roughness=0.6; m.metalness=0; panelSmMats.push(m); }  // soldermask = igual a la caja
+  else if(m.metalness>0.5){ m.roughness=0.4; m.color.copy(GOLD); panelCuMats.push(m); }                            // cobre -> oro (toggle oro/plata)
+  else if(c.r>0.55 && Math.abs(c.r-c.g)<0.2 && Math.abs(c.g-c.b)<0.2){ m.color.copy(FR4); m.roughness=0.75; m.metalness=0; }  // FR4 expuesto (caladas) -> tan solido
 });
 G.panel.position.set(-7.06, 11.5, 34.19);
 
@@ -118,7 +120,7 @@ JLC.forEach(([name,hex])=>{
 const caseEdges=[], caseFr4Mats=[];
 load('case.glb',G.case,1,o=>{
   o.material=o.material.clone();
-  o.material.transparent=true; o.material.opacity=0.4; o.material.depthWrite=false;
+  o.material.transparent=false; o.material.opacity=1; o.material.depthWrite=true;   // solido por defecto
   o.material.side=THREE.DoubleSide;
   const c=o.material.color;
   if(c.g>c.r && c.g>=c.b) caseMats.push(o.material);   // cara soldermask (recolorable con JLC)
@@ -137,7 +139,6 @@ document.getElementById('c_trans').onchange=e=>{
   [...caseMats,...caseFr4Mats].forEach(m=>{m.transparent=t;m.opacity=t?0.4:1;m.depthWrite=!t;m.needsUpdate=true;});
 };
 document.getElementById('c_edges').onchange=e=>{caseEdges.forEach(l=>l.visible=e.target.checked);};
-const GOLD=new THREE.Color('#d4a017'), SILVER=new THREE.Color('#cacace');
 document.getElementById('cu_gold').onclick=()=>panelCuMats.forEach(m=>{m.color.copy(GOLD);m.needsUpdate=true;});
 document.getElementById('cu_silver').onclick=()=>panelCuMats.forEach(m=>{m.color.copy(SILVER);m.needsUpdate=true;});
 
