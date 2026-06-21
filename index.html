@@ -81,7 +81,7 @@ const G={pcb:new THREE.Group(),comps:new THREE.Group(),knobs:new THREE.Group(),p
 Object.values(G).forEach(g=>scene.add(g));
 
 const loader=new GLTFLoader();
-const VER='?v=9';   // cache-bust: subir al re-deployar para forzar recarga de los .glb
+const VER='?v=10';   // cache-bust: subir al re-deployar para forzar recarga de los .glb
 const caseMats=[];
 function load(file,group,scale,onMesh){
   loader.load(file+VER,g=>{
@@ -103,9 +103,10 @@ load('panel.glb',G.panel,1000,o=>{
   if(!o.material) return;
   const m=o.material=o.material.clone(), c=m.color;
   m.transparent=false; m.opacity=1; m.depthWrite=true;        // KiCad exporta semitransparente -> opaco
-  if(c.g>c.r && c.g>=c.b){ m.color.setRGB(0.10,0.35,0.20); m.roughness=0.6; m.metalness=0; panelSmMats.push(m); }  // soldermask = igual a la caja
-  else if(m.metalness>0.5){ m.roughness=0.4; m.color.copy(GOLD); panelCuMats.push(m); }                            // cobre -> oro (toggle oro/plata)
-  else if(c.r>0.55 && Math.abs(c.r-c.g)<0.2 && Math.abs(c.g-c.b)<0.2){ m.color.copy(FR4); m.roughness=0.75; m.metalness=0; }  // FR4 expuesto (caladas) -> tan solido
+  if(m.metalness>0.5){ m.roughness=0.4; m.metalness=1; m.color.copy(GOLD); panelCuMats.push(m); }                  // cobre/metal -> oro (toggle oro/plata)
+  else if(c.r<0.3 && c.g>c.r && c.g>=c.b){ m.color.setRGB(0.10,0.35,0.20); m.roughness=0.6; m.metalness=0; panelSmMats.push(m); }  // soldermask = verde OSCURO (recolorable como la caja)
+  else if(c.r>0.85 && c.g>0.85 && c.b>0.85){ /* silkscreen blanco: dejar */ }                                     // silk
+  else { m.color.copy(FR4); m.roughness=0.75; m.metalness=0; }   // sustrato FR4 (oliva) incl. CANTOS -> tan solido
 });
 G.panel.position.set(-7.06, 11.5, 34.19);
 // perillas (sobre los ejes; knobs.glb ya en mm/world). Tope de color togglable.
