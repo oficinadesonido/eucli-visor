@@ -143,7 +143,7 @@ load('case.glb',G.case,1,o=>{
 // checkboxes
 const bind=(id,grp)=>{const el=document.getElementById(id);el.onchange=()=>grp.visible=el.checked;};
 bind('c_pcb',G.pcb); bind('c_comps',G.comps); bind('c_knobs',G.knobs); bind('c_panel',G.panel); bind('c_case',G.case);
-// swatches de color de perillas (IBUW)
+// swatches de color de perillas (WH148 AG3)
 const KNOBCOLS=[['Naranja','#d95a0d'],['Rojo','#c01818'],['Verde','#1a9e2e'],['Azul','#1746b0'],['Amarillo','#d6c200'],['Blanco','#e8e8e8'],['Negro','#1a1a1a']];
 const kcDiv=document.getElementById('knobcol');
 KNOBCOLS.forEach(([n,hex])=>{
