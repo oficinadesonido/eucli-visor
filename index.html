@@ -24,6 +24,7 @@
   <label><input type="checkbox" id="c_pcb" checked> PCB</label>
   <label><input type="checkbox" id="c_comps" checked> Componentes</label>
   <label><input type="checkbox" id="c_knobs" checked> Perillas</label>
+  <label><input type="checkbox" id="c_screws" checked> Tornillos (M3 allen)</label>
   <label><input type="checkbox" id="c_panel" checked> Panel frontal</label>
   <label><input type="checkbox" id="c_case" checked> Caja (paredes+base)</label>
   <hr style="border-color:#444">
@@ -77,11 +78,11 @@ scene.add(new THREE.AmbientLight(0xffffff,0.32));
 const add=(x,y,z,i)=>{const d=new THREE.DirectionalLight(0xffffff,i);d.position.set(x,y,z);scene.add(d);};
 add(-120,220,-80,1.5); add(150,140,120,0.8); add(0,-140,40,0.4);
 
-const G={pcb:new THREE.Group(),comps:new THREE.Group(),knobs:new THREE.Group(),panel:new THREE.Group(),case:new THREE.Group()};
+const G={pcb:new THREE.Group(),comps:new THREE.Group(),knobs:new THREE.Group(),screws:new THREE.Group(),panel:new THREE.Group(),case:new THREE.Group()};
 Object.values(G).forEach(g=>scene.add(g));
 
 const loader=new GLTFLoader();
-const VER='?v=11';   // cache-bust: subir al re-deployar para forzar recarga de los .glb
+const VER='?v=12';   // cache-bust: subir al re-deployar para forzar recarga de los .glb
 const caseMats=[];
 function load(file,group,scale,onMesh){
   loader.load(file+VER,g=>{
@@ -115,6 +116,8 @@ load('knobs.glb',G.knobs,1,o=>{
   const c=o.material&&o.material.color;
   if(c && c.r>0.5 && c.b<0.3 && c.g>0.2 && c.g<0.6){ o.material=o.material.clone(); knobCapMats.push(o.material); }  // tope naranja por defecto
 });
+// tornillos M3 cabeza allen negra (ya en mm/world, negro mate metalico — sin recolor)
+load('screws.glb',G.screws,1);
 
 // colores soldermask JLC -> color de la CAJA (se fabrica en FR4/PCB en JLC)
 const JLC=[['Verde','#157f3b'],['Rojo','#9e2018'],['Amarillo','#c7b200'],['Azul','#1f3d7a'],
@@ -144,7 +147,7 @@ load('case.glb',G.case,1,o=>{
 
 // checkboxes
 const bind=(id,grp)=>{const el=document.getElementById(id);el.onchange=()=>grp.visible=el.checked;};
-bind('c_pcb',G.pcb); bind('c_comps',G.comps); bind('c_knobs',G.knobs); bind('c_panel',G.panel); bind('c_case',G.case);
+bind('c_pcb',G.pcb); bind('c_comps',G.comps); bind('c_knobs',G.knobs); bind('c_screws',G.screws); bind('c_panel',G.panel); bind('c_case',G.case);
 // swatches de color de perillas (WH148 AG3)
 const KNOBCOLS=[['Naranja','#d95a0d'],['Rojo','#c01818'],['Verde','#1a9e2e'],['Azul','#1746b0'],['Amarillo','#d6c200'],['Blanco','#e8e8e8'],['Negro','#1a1a1a']];
 const kcDiv=document.getElementById('knobcol');
