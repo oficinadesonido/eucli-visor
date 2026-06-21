@@ -33,8 +33,11 @@
   <div style="margin-top:6px">Color caja (soldermask JLC):</div>
   <div id="sm"></div>
   <div style="margin-top:6px">Acabado cobre: <button id="cu_gold">Oro</button> <button id="cu_silver">Plata</button></div>
-  <div style="margin-top:6px">Color perillas:</div>
-  <div id="knobcol"></div>
+  <div style="margin-top:6px">Tipo de perilla (potes): <select id="knobtype"></select></div>
+  <div style="margin-top:4px">Color por pote:
+    <input type="color" id="pc0" value="#d95a0d" title="Pote 1">
+    <input type="color" id="pc1" value="#c01818" title="Pote 2">
+    <input type="color" id="pc2" value="#1a9e2e" title="Pote 3"></div>
 </div>
 <div id="views">
   <h3>Vista</h3>
@@ -82,7 +85,7 @@ const G={pcb:new THREE.Group(),comps:new THREE.Group(),knobs:new THREE.Group(),s
 Object.values(G).forEach(g=>scene.add(g));
 
 const loader=new GLTFLoader();
-const VER='?v=13';   // cache-bust: subir al re-deployar para forzar recarga de los .glb
+const VER='?v=14';   // cache-bust: subir al re-deployar para forzar recarga de los .glb
 const caseMats=[];
 function load(file,group,scale,onMesh){
   loader.load(file+VER,g=>{
@@ -110,12 +113,32 @@ load('panel.glb',G.panel,1000,o=>{
   else { m.color.copy(FR4); m.roughness=0.75; m.metalness=0; }   // sustrato FR4 (oliva) incl. CANTOS -> tan solido
 });
 G.panel.position.set(-7.06, 11.5, 34.19);
-// perillas (sobre los ejes; knobs.glb ya en mm/world). Tope de color togglable.
-const knobCapMats=[];
-load('knobs.glb',G.knobs,1,o=>{
-  const c=o.material&&o.material.color;
-  if(c && c.r>0.5 && c.b<0.3 && c.g>0.2 && c.g<0.6){ o.material=o.material.clone(); knobCapMats.push(o.material); }  // tope naranja por defecto
-});
+// ===== Perillas: encoder fijo + 3 potes instanciados del tipo elegido, color por pote =====
+const POTS=[[87.40,120.70],[44.85,120.75],[66.00,127.60]];  // (worldX, worldY) de los 3 potes
+const ENC=[65.8,90.2];                                       // encoder (centro del anillo)
+const KBZ=15;                                                // altura base de las perillas (mm)
+const KNOB_TYPES={'WH148 AG3':'knob_wh148.glb','Chroma':'knob_chroma.glb','MXR 25mm':'knob_mxr.glb',
+                  'Negra c/aleta':'knob_knobv3.glb','Pote (tope)':'knob_pot10.glb'};
+const potColors=['#d95a0d','#c01818','#1a9e2e'];
+const knobLoader=new GLTFLoader(), tplCache={};
+let potInst=[null,null,null];
+function loadTpl(file){return new Promise((res,rej)=>{
+  if(tplCache[file])return res(tplCache[file]);
+  knobLoader.load(file+VER,g=>{tplCache[file]=g.scene;res(g.scene);},undefined,rej);});}
+function applyPotColor(inst,hex){const c=new THREE.Color(hex);
+  inst.traverse(o=>{if(o.isMesh&&o.userData.kc){o.material.color.copy(c);o.material.needsUpdate=true;}});}
+function setKnobType(file){
+  potInst.forEach(o=>{if(o)G.knobs.remove(o);});
+  loadTpl(file).then(tpl=>{POTS.forEach((p,i)=>{
+    const inst=tpl.clone(true);
+    inst.position.set(p[0],KBZ,p[1]);
+    inst.traverse(o=>{if(o.isMesh&&o.material){o.material=o.material.clone();
+      if(/knobcolor/i.test(o.material.name))o.userData.kc=true;}});
+    applyPotColor(inst,potColors[i]); G.knobs.add(inst); potInst[i]=inst;
+  });}).catch(e=>showErr('perilla '+file+': '+e));
+}
+loadTpl('knob_encoder.glb').then(tpl=>{const e=tpl.clone(true);e.position.set(ENC[0],KBZ,ENC[1]);G.knobs.add(e);})
+  .catch(e=>showErr('encoder: '+e));
 // tornillos M3 cabeza allen negra (ya en mm/world, negro mate metalico — sin recolor)
 load('screws.glb',G.screws,1);
 
@@ -148,15 +171,13 @@ load('case.glb',G.case,1,o=>{
 // checkboxes
 const bind=(id,grp)=>{const el=document.getElementById(id);el.onchange=()=>grp.visible=el.checked;};
 bind('c_pcb',G.pcb); bind('c_comps',G.comps); bind('c_knobs',G.knobs); bind('c_screws',G.screws); bind('c_panel',G.panel); bind('c_case',G.case);
-// swatches de color de perillas (WH148 AG3)
-const KNOBCOLS=[['Naranja','#d95a0d'],['Rojo','#c01818'],['Verde','#1a9e2e'],['Azul','#1746b0'],['Amarillo','#d6c200'],['Blanco','#e8e8e8'],['Negro','#1a1a1a']];
-const kcDiv=document.getElementById('knobcol');
-KNOBCOLS.forEach(([n,hex])=>{
-  const b=document.createElement('button');
-  b.title=n; b.style.cssText=`width:20px;height:20px;margin:2px;padding:0;border:1px solid #888;border-radius:4px;background:${hex};cursor:pointer`;
-  b.onclick=()=>{const c=new THREE.Color(hex);knobCapMats.forEach(m=>{m.color.copy(c);m.needsUpdate=true;});};
-  kcDiv.appendChild(b);
-});
+// selector de TIPO de perilla (potes) + color individual por pote
+const ktSel=document.getElementById('knobtype');
+Object.keys(KNOB_TYPES).forEach(n=>{const op=document.createElement('option');op.value=KNOB_TYPES[n];op.textContent=n;ktSel.appendChild(op);});
+ktSel.onchange=()=>setKnobType(ktSel.value);
+setKnobType(ktSel.value);   // tipo inicial (WH148)
+[0,1,2].forEach(i=>{const el=document.getElementById('pc'+i);
+  el.oninput=()=>{potColors[i]=el.value; if(potInst[i])applyPotColor(potInst[i],el.value);};});
 document.getElementById('c_trans').onchange=e=>{
   const t=e.target.checked;
   [...caseMats,...caseFr4Mats].forEach(m=>{m.transparent=t;m.opacity=t?0.4:1;m.depthWrite=!t;m.needsUpdate=true;});
