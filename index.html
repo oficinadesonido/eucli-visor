@@ -23,6 +23,7 @@
   <h3>Capas</h3>
   <label><input type="checkbox" id="c_pcb" checked> PCB</label>
   <label><input type="checkbox" id="c_comps" checked> Componentes</label>
+  <label><input type="checkbox" id="c_knobs" checked> Perillas</label>
   <label><input type="checkbox" id="c_panel" checked> Panel frontal</label>
   <label><input type="checkbox" id="c_case" checked> Caja (paredes+base)</label>
   <hr style="border-color:#444">
@@ -31,6 +32,8 @@
   <div style="margin-top:6px">Color caja (soldermask JLC):</div>
   <div id="sm"></div>
   <div style="margin-top:6px">Acabado cobre: <button id="cu_gold">Oro</button> <button id="cu_silver">Plata</button></div>
+  <div style="margin-top:6px">Color perillas:</div>
+  <div id="knobcol"></div>
 </div>
 <div id="views">
   <h3>Vista</h3>
@@ -74,7 +77,7 @@ scene.add(new THREE.AmbientLight(0xffffff,0.32));
 const add=(x,y,z,i)=>{const d=new THREE.DirectionalLight(0xffffff,i);d.position.set(x,y,z);scene.add(d);};
 add(-120,220,-80,1.5); add(150,140,120,0.8); add(0,-140,40,0.4);
 
-const G={pcb:new THREE.Group(),comps:new THREE.Group(),panel:new THREE.Group(),case:new THREE.Group()};
+const G={pcb:new THREE.Group(),comps:new THREE.Group(),knobs:new THREE.Group(),panel:new THREE.Group(),case:new THREE.Group()};
 Object.values(G).forEach(g=>scene.add(g));
 
 const loader=new GLTFLoader();
@@ -104,6 +107,12 @@ load('panel.glb',G.panel,1000,o=>{
   else if(c.r>0.55 && Math.abs(c.r-c.g)<0.2 && Math.abs(c.g-c.b)<0.2){ m.color.copy(FR4); m.roughness=0.75; m.metalness=0; }  // FR4 expuesto (caladas) -> tan solido
 });
 G.panel.position.set(-7.06, 11.5, 34.19);
+// perillas (sobre los ejes; knobs.glb ya en mm/world). Tope de color togglable.
+const knobCapMats=[];
+load('knobs.glb',G.knobs,1,o=>{
+  const c=o.material&&o.material.color;
+  if(c && c.r>0.5 && c.b<0.3 && c.g>0.2 && c.g<0.6){ o.material=o.material.clone(); knobCapMats.push(o.material); }  // tope naranja por defecto
+});
 
 // colores soldermask JLC -> color de la CAJA (se fabrica en FR4/PCB en JLC)
 const JLC=[['Verde','#157f3b'],['Rojo','#9e2018'],['Amarillo','#c7b200'],['Azul','#1f3d7a'],
@@ -133,7 +142,16 @@ load('case.glb',G.case,1,o=>{
 
 // checkboxes
 const bind=(id,grp)=>{const el=document.getElementById(id);el.onchange=()=>grp.visible=el.checked;};
-bind('c_pcb',G.pcb); bind('c_comps',G.comps); bind('c_panel',G.panel); bind('c_case',G.case);
+bind('c_pcb',G.pcb); bind('c_comps',G.comps); bind('c_knobs',G.knobs); bind('c_panel',G.panel); bind('c_case',G.case);
+// swatches de color de perillas (IBUW)
+const KNOBCOLS=[['Naranja','#d95a0d'],['Rojo','#c01818'],['Verde','#1a9e2e'],['Azul','#1746b0'],['Amarillo','#d6c200'],['Blanco','#e8e8e8'],['Negro','#1a1a1a']];
+const kcDiv=document.getElementById('knobcol');
+KNOBCOLS.forEach(([n,hex])=>{
+  const b=document.createElement('button');
+  b.title=n; b.style.cssText=`width:20px;height:20px;margin:2px;padding:0;border:1px solid #888;border-radius:4px;background:${hex};cursor:pointer`;
+  b.onclick=()=>{const c=new THREE.Color(hex);knobCapMats.forEach(m=>{m.color.copy(c);m.needsUpdate=true;});};
+  kcDiv.appendChild(b);
+});
 document.getElementById('c_trans').onchange=e=>{
   const t=e.target.checked;
   [...caseMats,...caseFr4Mats].forEach(m=>{m.transparent=t;m.opacity=t?0.4:1;m.depthWrite=!t;m.needsUpdate=true;});
