@@ -34,10 +34,8 @@
   <div id="sm"></div>
   <div style="margin-top:6px">Acabado cobre: <button id="cu_gold">Oro</button> <button id="cu_silver">Plata</button></div>
   <div style="margin-top:6px">Tipo de perilla (potes): <select id="knobtype"></select></div>
-  <div style="margin-top:4px">Color por pote:
-    <input type="color" id="pc0" value="#d95a0d" title="Pote 1">
-    <input type="color" id="pc1" value="#c01818" title="Pote 2">
-    <input type="color" id="pc2" value="#1a9e2e" title="Pote 3"></div>
+  <div style="margin-top:4px">Color por pote:</div>
+  <div id="potecols"></div>
 </div>
 <div id="views">
   <h3>Vista</h3>
@@ -85,7 +83,7 @@ const G={pcb:new THREE.Group(),comps:new THREE.Group(),knobs:new THREE.Group(),s
 Object.values(G).forEach(g=>scene.add(g));
 
 const loader=new GLTFLoader();
-const VER='?v=14';   // cache-bust: subir al re-deployar para forzar recarga de los .glb
+const VER='?v=15';   // cache-bust: subir al re-deployar para forzar recarga de los .glb
 const caseMats=[];
 function load(file,group,scale,onMesh){
   loader.load(file+VER,g=>{
@@ -117,8 +115,11 @@ G.panel.position.set(-7.06, 11.5, 34.19);
 const POTS=[[87.40,120.70],[44.85,120.75],[66.00,127.60]];  // (worldX, worldY) de los 3 potes
 const ENC=[65.8,90.2];                                       // encoder (centro del anillo)
 const KBZ=15;                                                // altura base de las perillas (mm)
-const KNOB_TYPES={'WH148 AG3':'knob_wh148.glb','Chroma':'knob_chroma.glb','MXR 25mm':'knob_mxr.glb',
-                  'Negra c/aleta':'knob_knobv3.glb','Pote (tope)':'knob_pot10.glb'};
+const KNOB_TYPES={'WH148 AG3':'knob_wh148.glb','Davies 1900h':'knob_davies.glb','Chroma':'knob_chroma.glb',
+                  'MXR 25mm':'knob_mxr.glb','Negra c/aleta':'knob_knobv3.glb','Pote (tope)':'knob_pot10.glb'};
+// paleta ACOTADA de colores para los potes (no selector libre)
+const KNOBPAL=[['Negro','#1a1a1a'],['Rojo','#c01818'],['Naranja','#d95a0d'],['Amarillo','#e0c000'],
+  ['Verde','#1a9e2e'],['Azul','#1746b0'],['Celeste','#3aa0e0'],['Violeta','#7a3aa0'],['Gris','#9a9a9a'],['Blanco','#e8e8e8']];
 const potColors=['#d95a0d','#c01818','#1a9e2e'];
 const knobLoader=new GLTFLoader(), tplCache={};
 let potInst=[null,null,null];
@@ -176,8 +177,22 @@ const ktSel=document.getElementById('knobtype');
 Object.keys(KNOB_TYPES).forEach(n=>{const op=document.createElement('option');op.value=KNOB_TYPES[n];op.textContent=n;ktSel.appendChild(op);});
 ktSel.onchange=()=>setKnobType(ktSel.value);
 setKnobType(ktSel.value);   // tipo inicial (WH148)
-[0,1,2].forEach(i=>{const el=document.getElementById('pc'+i);
-  el.oninput=()=>{potColors[i]=el.value; if(potInst[i])applyPotColor(potInst[i],el.value);};});
+// color por pote desde paleta acotada (3 filas de swatches, marca el activo)
+const pcDiv=document.getElementById('potecols');
+[0,1,2].forEach(i=>{
+  const row=document.createElement('div'); row.style.cssText='margin:2px 0;white-space:nowrap';
+  const lbl=document.createElement('span'); lbl.textContent='P'+(i+1); lbl.style.cssText='font-size:11px;color:#9aa;margin-right:4px';
+  row.appendChild(lbl);
+  KNOBPAL.forEach(([n,hex])=>{
+    const b=document.createElement('button');
+    b.title=n; b.dataset.hex=hex;
+    b.style.cssText=`width:15px;height:15px;margin:1px;padding:0;border:2px solid ${hex===potColors[i]?'#8fd':'#666'};border-radius:3px;background:${hex};cursor:pointer`;
+    b.onclick=()=>{potColors[i]=hex; if(potInst[i])applyPotColor(potInst[i],hex);
+      [...row.children].forEach(c=>{if(c.dataset)c.style.borderColor=(c.dataset.hex===hex?'#8fd':'#666');});};
+    row.appendChild(b);
+  });
+  pcDiv.appendChild(row);
+});
 document.getElementById('c_trans').onchange=e=>{
   const t=e.target.checked;
   [...caseMats,...caseFr4Mats].forEach(m=>{m.transparent=t;m.opacity=t?0.4:1;m.depthWrite=!t;m.needsUpdate=true;});
