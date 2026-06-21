@@ -81,9 +81,10 @@ const G={pcb:new THREE.Group(),comps:new THREE.Group(),knobs:new THREE.Group(),p
 Object.values(G).forEach(g=>scene.add(g));
 
 const loader=new GLTFLoader();
+const VER='?v=8';   // cache-bust: subir al re-deployar para forzar recarga de los .glb
 const caseMats=[];
 function load(file,group,scale,onMesh){
-  loader.load(file,g=>{
+  loader.load(file+VER,g=>{
     g.scene.scale.setScalar(scale);
     if(onMesh) g.scene.traverse(o=>{if(o.isMesh)onMesh(o);});
     group.add(g.scene);
