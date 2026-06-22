@@ -122,11 +122,11 @@ const loads=[];
 // PCB (metros -> x1000). Entra desde arriba.
 loads.push(loadGLB('pcb.glb',G.pcb,1000).then(s=>addPart(s,new THREE.Vector3(0,1,0),130,0.30,0.55)));
 // componentes: oscurecer (igual que visor)
-loads.push(loadGLB('comps.glb',G.comps,1000,o=>{if(o.material){o.material=o.material.clone();o.material.color.setRGB(0.11,0.11,0.12);o.material.roughness=0.55;o.material.metalness=0.2;}})
+loads.push(loadGLB('comps_lo.glb',G.comps,1000,o=>{if(o.material){o.material=o.material.clone();o.material.color.setRGB(0.11,0.11,0.12);o.material.roughness=0.55;o.material.metalness=0.2;}})
   .then(s=>addPart(s,new THREE.Vector3(0.15,1,0.1),150,0.42,0.64)));
 // panel frontal (FR4 real). G.panel ya posicionado; animamos su scene hijo desde MUY arriba.
 const panelSmMats=[],panelCuMats=[];
-loads.push(loadGLB('panel.glb',G.panel,1000,o=>{
+loads.push(loadGLB('panel_lo.glb',G.panel,1000,o=>{
   if(!o.material) return;
   const m=o.material=o.material.clone(), c=m.color;
   m.transparent=false; m.opacity=1; m.depthWrite=true;
