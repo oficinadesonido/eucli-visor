@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>eucliMiniV2 — animación ensamblaje (RRSS)</title>
+<style>
+  html,body{margin:0;height:100%;overflow:hidden;background:#15161a;font-family:system-ui,sans-serif;color:#eee}
+  /* escenario centrado: permite encuadre cuadrado / vertical para redes */
+  #stage{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#0e0f12}
+  #wrap{position:relative;background:#15161a;box-shadow:0 0 60px rgba(0,0,0,.6);overflow:hidden}
+  #wrap canvas{display:block}
+  #brand{position:absolute;left:18px;bottom:14px;font-size:15px;letter-spacing:.5px;color:#cfe;z-index:5;
+         font-weight:600;text-shadow:0 1px 3px rgba(0,0,0,.6);opacity:.9;pointer-events:none}
+  #brand small{display:block;font-weight:400;font-size:11px;color:#9ab;letter-spacing:1px}
+  #ui{position:fixed;top:10px;left:10px;background:rgba(20,22,26,.85);padding:10px 12px;border-radius:8px;
+      font-size:13px;z-index:20;line-height:1.7}
+  #ui h3{margin:0 0 6px;font-size:12px;color:#8fd;text-transform:uppercase;letter-spacing:1px}
+  #ui button{margin:2px;padding:5px 10px;font-size:12px;background:#3a3d44;color:#eee;border:1px solid #555;border-radius:5px;cursor:pointer}
+  #ui button:hover{background:#4a4e57}
+  #ui button.on{background:#2c6e49;border-color:#3fbf7f;color:#dffaeb}
+  #ui .row{margin:4px 0}
+  #ui label{font-size:11px;color:#9aa;margin-right:6px}
+  #err{position:fixed;top:10px;right:10px;color:#fa8;font-size:12px;max-width:42ch;z-index:20;text-align:right}
+  #hideui #ui{display:none}
+</style>
+</head>
+<body>
+<div id="stage"><div id="wrap"></div></div>
+<div id="brand">eucliMiniV2<small>OFICINA DES ONIDO</small></div>
+<div id="ui">
+  <h3>Animación</h3>
+  <div class="row"><button id="replay">▶ Reproducir</button><button id="loop" class="on">⟲ Loop</button></div>
+  <div class="row"><label>Encuadre</label><button data-fmt="full">Full</button><button data-fmt="1:1">1:1</button><button data-fmt="9:16">9:16</button><button data-fmt="16:9">16:9</button></div>
+  <div class="row"><label>Velocidad</label><button data-spd="0.7">·7</button><button data-spd="1" class="on">1×</button><button data-spd="1.4">1.4×</button></div>
+  <div class="row"><label>Fondo</label><button data-bg="#15161a" class="on">Oscuro</button><button data-bg="#e9ecf1">Claro</button><button data-bg="#0e2a24">Verde</button></div>
+  <div class="row"><button id="hide">Ocultar panel (h)</button></div>
+</div>
+<div id="err"></div>
+<script type="importmap">
+{"imports":{
+  "three":"https://unpkg.com/three@0.160.0/build/three.module.js",
+  "three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"
+}}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
+
+const errEl=document.getElementById('err');
+const showErr=m=>{errEl.textContent=String(m);console.error(m);};
+
+const wrap=document.getElementById('wrap');
+const scene=new THREE.Scene();
+let BG=new THREE.Color(0x15161a);
+scene.background=BG;
+const renderer=new THREE.WebGLRenderer({antialias:true,powerPreference:'high-performance'});
+renderer.setPixelRatio(Math.min(devicePixelRatio,1.5));   // 1.5 basta y rinde mucho mejor en hidpi
+renderer.toneMapping=THREE.ACESFilmicToneMapping; renderer.toneMappingExposure=1.05;
+wrap.appendChild(renderer.domElement);
+
+// frame: X=worldX, Y=alto, Z=worldY ; centro de la placa
+const CX=66.13, CZ=135.86;
+const CENTER=new THREE.Vector3(CX,12,CZ);
+const camera=new THREE.PerspectiveCamera(42,16/9,1,8000);
+
+scene.add(new THREE.AmbientLight(0xffffff,0.34));
+const add=(x,y,z,i)=>{const d=new THREE.DirectionalLight(0xffffff,i);d.position.set(x,y,z);scene.add(d);};
+add(-120,220,-80,1.5); add(150,140,120,0.85); add(0,-140,40,0.4);
+
+const G={pcb:new THREE.Group(),comps:new THREE.Group(),knobs:new THREE.Group(),screws:new THREE.Group(),panel:new THREE.Group(),case:new THREE.Group()};
+Object.values(G).forEach(g=>scene.add(g));
+
+const loader=new GLTFLoader();
+const VER='?v=16';
+// carga -> Promise<scene>
+function loadGLB(file,group,scale,onMesh){
+  return new Promise((res,rej)=>{
+    loader.load(file+VER,g=>{
+      g.scene.scale.setScalar(scale);
+      if(onMesh) g.scene.traverse(o=>{if(o.isMesh)onMesh(o);});
+      group.add(g.scene); res(g.scene);
+    },undefined,e=>{showErr('No cargó '+file+' — servir por http. '+e);rej(e);});
+  });
+}
+
+// ---- materiales (idéntico criterio que visor.html) ----
+const GOLD=new THREE.Color('#d4a017');
+const FR4=new THREE.Color(0.80,0.70,0.42);
+const CASE_COL=new THREE.Color('#141414');   // color por defecto de la caja: NEGRO (JLC negro)
+const caseMats=[];
+
+// ===== PARTES ANIMABLES =====
+// cada parte: {obj, base(Vector3), off(Vector3), t0,t1, spin, mats[]}
+const parts=[];
+const easeOut=p=>1-Math.pow(1-p,3);
+function collectMats(obj){
+  const mats=[];
+  obj.traverse(o=>{
+    if((o.isMesh||o.isLine||o.isLineSegments)&&o.material){
+      (Array.isArray(o.material)?o.material:[o.material]).forEach(m=>{m.userData._t0=m.transparent;mats.push(m);});
+    }
+  });
+  return mats;
+}
+function addPart(obj,dir,dist,t0,t1,spin=0){
+  obj.updateWorldMatrix(true,false);
+  const base=obj.position.clone();
+  const off=dir.clone().normalize().multiplyScalar(dist);
+  parts.push({obj,base,off,t0,t1,spin,baseRotY:obj.rotation.y,mats:collectMats(obj)});
+}
+// dirección radial horizontal desde el centro de la placa hacia el centro del objeto
+function radialDir(obj){
+  const box=new THREE.Box3().setFromObject(obj), c=box.getCenter(new THREE.Vector3());
+  const d=new THREE.Vector3(c.x-CENTER.x,0,c.z-CENTER.z);
+  if(d.lengthSq()<1) return new THREE.Vector3(0,-1,0); // pieza central (base) -> desde abajo
+  return d;
+}
+
+// ---- cargas ----
+const loads=[];
+// PCB (metros -> x1000). Entra desde arriba.
+loads.push(loadGLB('pcb.glb',G.pcb,1000).then(s=>addPart(s,new THREE.Vector3(0,1,0),130,0.30,0.55)));
+// componentes: oscurecer (igual que visor)
+loads.push(loadGLB('comps.glb',G.comps,1000,o=>{if(o.material){o.material=o.material.clone();o.material.color.setRGB(0.11,0.11,0.12);o.material.roughness=0.55;o.material.metalness=0.2;}})
+  .then(s=>addPart(s,new THREE.Vector3(0.15,1,0.1),150,0.42,0.64)));
+// panel frontal (FR4 real). G.panel ya posicionado; animamos su scene hijo desde MUY arriba.
+const panelSmMats=[],panelCuMats=[];
+loads.push(loadGLB('panel.glb',G.panel,1000,o=>{
+  if(!o.material) return;
+  const m=o.material=o.material.clone(), c=m.color;
+  m.transparent=false; m.opacity=1; m.depthWrite=true;
+  if(m.metalness>0.5){ m.roughness=0.4; m.metalness=1; m.color.copy(GOLD); panelCuMats.push(m); }
+  else if(c.r<0.3 && c.g>c.r && c.g>=c.b){ m.color.copy(CASE_COL); m.roughness=0.55; m.metalness=0; panelSmMats.push(m); }
+  else if(c.r>0.85 && c.g>0.85 && c.b>0.85){ }
+  else { m.color.copy(FR4); m.roughness=0.75; m.metalness=0; }
+}).then(s=>addPart(s,new THREE.Vector3(0,1,0),190,0.58,0.80)));
+G.panel.position.set(-7.06,11.5,34.19);
+// caja (mm x1). cada malla = una parte (explota radial; base desde abajo).
+loads.push(loadGLB('case.glb',G.case,1,o=>{
+  o.material=o.material.clone();
+  o.material.transparent=false; o.material.opacity=1; o.material.depthWrite=true;
+  o.material.side=THREE.DoubleSide;
+  const c=o.material.color;
+  if(c.g>c.r && c.g>=c.b){ o.material.color.copy(CASE_COL); caseMats.push(o.material); }   // cara soldermask -> negro
+  const e=new THREE.LineSegments(new THREE.EdgesGeometry(o.geometry,25),new THREE.LineBasicMaterial({color:0x444}));
+  o.add(e);
+}).then(s=>{
+  const meshes=[]; s.traverse(o=>{if(o.isMesh)meshes.push(o);});
+  meshes.forEach((mz,i)=>{
+    const stag=meshes.length>1?(i/(meshes.length-1)):0;
+    addPart(mz,radialDir(mz),85,0.00+stag*0.10,0.30+stag*0.12);
+  });
+}));
+// tornillos M3 (mm x1). caen desde arriba girando.
+loads.push(loadGLB('screws.glb',G.screws,1).then(s=>{
+  const meshes=[]; s.traverse(o=>{if(o.isMesh)meshes.push(o);});
+  meshes.forEach(mz=>addPart(mz,new THREE.Vector3(0,1,0),70,0.84,1.00,Math.PI*2));
+}));
+// perillas: WH148 en los 3 potes (color) + encoder. caen girando.
+const POTS=[[87.40,120.70],[44.85,120.75],[66.00,127.60]];
+const ENC=[65.8,90.2]; const KBZ=15;
+const potColors=['#d95a0d','#c01818','#1a9e2e'];
+const kLoader=new GLTFLoader();
+function loadTpl(file){return new Promise((res,rej)=>kLoader.load(file+VER,g=>res(g.scene),undefined,rej));}
+loads.push(loadTpl('knob_wh148.glb').then(tpl=>{
+  POTS.forEach((p,i)=>{
+    const inst=tpl.clone(true); inst.position.set(p[0],KBZ,p[1]);
+    const col=new THREE.Color(potColors[i]);
+    inst.traverse(o=>{if(o.isMesh&&o.material){o.material=o.material.clone();
+      if(/knobcolor/i.test(o.material.name)) o.material.color.copy(col);}});
+    G.knobs.add(inst); addPart(inst,new THREE.Vector3(0,1,0),95,0.70+i*0.04,0.90,Math.PI*2.5);
+  });
+}).catch(e=>showErr('perilla: '+e)));
+loads.push(loadTpl('knob_encoder.glb').then(tpl=>{
+  const e=tpl.clone(true); e.position.set(ENC[0],KBZ,ENC[1]);
+  G.knobs.add(e); addPart(e,new THREE.Vector3(0,1,0),95,0.74,0.92,Math.PI*2.5);
+}).catch(e=>showErr('encoder: '+e)));
+
+// ===== TIMELINE =====
+const T_IN=3.6, T_HOLD=1.6, T_OUT=2.0;   // segundos (a 1x)
+const CYCLE=T_IN+T_HOLD+T_OUT;
+let speed=1, looping=true, t=0, lastNow=performance.now(), ready=false;
+
+// aplica el "factor de ensamblaje" p (0=lejos/invisible, 1=en su sitio) a una parte
+function applyPart(pt,p){
+  // Sin fundido: las piezas entran deslizándose y se hacen visibles de golpe.
+  // (La transparencia sobre mallas pesadas -panel/comps- era lo que mataba el GPU
+  //  durante el movimiento; todo opaco = depth-test, mucho más fluido.)
+  const vis=p>0.001;
+  pt.obj.visible=vis; if(!vis) return;
+  const e=easeOut(p);
+  pt.obj.position.copy(pt.base).addScaledVector(pt.off,(1-e));
+  if(pt.spin) pt.obj.rotation.y=pt.baseRotY+pt.spin*(1-e);
+}
+function setTimeline(time){
+  // fase + progreso de fase
+  let assembling=true, ph;
+  if(time<T_IN){ ph=time/T_IN; assembling=true; }
+  else if(time<T_IN+T_HOLD){ ph=1; assembling=true; }
+  else { ph=(time-T_IN-T_HOLD)/T_OUT; assembling=false; }   // 0..1 desensamblar
+  for(const pt of parts){
+    const w0=pt.t0,w1=pt.t1, span=Math.max(1e-3,w1-w0);
+    let p;
+    if(assembling) p=(ph-w0)/span;                 // se llena de a poco
+    else p=((1-ph)-w0)/span;                        // se vacía (orden inverso)
+    applyPart(pt,Math.max(0,Math.min(1,p)));
+  }
+}
+
+// cámara: órbita lenta continua, leve zoom-in durante el ensamblaje
+let orbit=Math.PI*0.18;
+function setCamera(time,dt){
+  orbit+=dt*0.18*speed;
+  const assemble=Math.min(1,time/T_IN);
+  const R=THREE.MathUtils.lerp(360,235,easeOut(assemble));
+  const h=THREE.MathUtils.lerp(230,150,easeOut(assemble));
+  camera.position.set(CENTER.x+Math.cos(orbit)*R, h, CENTER.z+Math.sin(orbit)*R);
+  camera.lookAt(CENTER);
+}
+
+Promise.allSettled(loads).then(()=>{ready=true; t=0;});
+
+function frame(){
+  requestAnimationFrame(frame);
+  const now=performance.now(), dt=Math.min(0.05,(now-lastNow)/1000); lastNow=now;
+  if(ready){
+    t+=dt*speed;
+    if(t>=CYCLE){ if(looping) t-=CYCLE; else t=CYCLE-0.001; }
+    setTimeline(t);
+  }
+  setCamera(ready?t:0,dt);
+  renderer.render(scene,camera);
+}
+frame();
+
+// ===== ENCUADRE / RESIZE =====
+let fmt='full';
+function resize(){
+  const W=innerWidth,H=innerHeight; let w,h;
+  if(fmt==='full'){ w=W; h=H; }
+  else{ const[a,b]=fmt.split(':').map(Number), ar=a/b;
+        if(W/H>ar){ h=H; w=Math.round(H*ar);} else { w=W; h=Math.round(W/ar);} }
+  wrap.style.width=w+'px'; wrap.style.height=h+'px';
+  renderer.setSize(w,h); camera.aspect=w/h; camera.updateProjectionMatrix();
+}
+addEventListener('resize',resize); resize();
+
+// ===== UI =====
+const sel=(g,el)=>{[...el.parentNode.querySelectorAll('button')].forEach(b=>b.classList.remove('on'));el.classList.add('on');};
+document.getElementById('replay').onclick=()=>{t=0;};
+const loopBtn=document.getElementById('loop');
+loopBtn.onclick=()=>{looping=!looping;loopBtn.classList.toggle('on',looping);};
+document.querySelectorAll('[data-fmt]').forEach(b=>b.onclick=()=>{fmt=b.dataset.fmt;sel('fmt',b);resize();});
+document.querySelectorAll('[data-spd]').forEach(b=>b.onclick=()=>{speed=parseFloat(b.dataset.spd);sel('spd',b);});
+document.querySelectorAll('[data-bg]').forEach(b=>b.onclick=()=>{BG=new THREE.Color(b.dataset.bg);scene.background=BG;wrap.style.background=b.dataset.bg;sel('bg',b);});
+document.getElementById('hide').onclick=()=>document.body.classList.toggle('hideui');
+addEventListener('keydown',e=>{
+  if(e.key==='h') document.body.classList.toggle('hideui');
+  if(e.key===' '){e.preventDefault();t=0;}
+});
+</script>
+</body>
+</html>
